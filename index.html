@@ -270,6 +270,11 @@ function viewRegl() {
     <label>Prénom de ton épouse<input id="sM" value="${esc(NM())}"></label>
     <label>Le cycle commence le (jour du mois)<input id="sD" type="number" min="1" max="28" inputmode="numeric" value="${S.settings.startDay}"></label>
     <button class="btn full" data-act="saveSet">Enregistrer</button></div>
+    <div class="card"><h2>Récupérer depuis Budget24</h2>
+    <p class="mut" style="margin-top:0">Reprend les charges récurrentes et les créanciers (Banque de France avec paliers). Tu choisis ensuite qui paye chaque ligne.</p>
+    <button class="btn full" data-act="b24">Lire les données de Budget24</button>
+    <button class="btn sec full" data-act="b24file">…ou importer une sauvegarde Budget24 (.json)</button>
+    <input type="file" id="b24File" accept="application/json,.json" style="display:none"></div>
     <div class="card"><h2>Sauvegarde</h2>
     <p class="mut" style="margin-top:0">Les données restent sur ce téléphone. Exporte régulièrement une sauvegarde.</p>
     <div class="actions"><button class="btn sec" data-act="export">Exporter</button><button class="btn sec" data-act="import">Importer</button></div>
@@ -279,7 +284,7 @@ function viewRegl() {
     • Prorata de ${esc(NM())} = (son salaire + ½ aides) ÷ (tous les revenus + aides)<br>
     • Dû à ${esc(NM())} = son salaire + ½ aides − ses charges perso − prorata × charges familiales<br>
     • Une opération décalée reste comptée dans son cycle d'origine.</p></div>
-    <p class="mut" style="text-align:center">Quote-Part v1.1</p>`;
+    <p class="mut" style="text-align:center">Quote-Part v1.2</p>`;
 }
 
 /* ====================== Feuilles (formulaires) ====================== */
@@ -438,6 +443,47 @@ async function share() {
   try { await navigator.clipboard.writeText(txt); toast('Récap copié'); } catch (e) { openSheet(`<h3>Récap</h3><textarea style="width:100%;height:50vh;font:inherit">${esc(txt)}</textarea>`); }
 }
 
+/* ====================== Import Budget24 ====================== */
+function b24Review(d) {
+  if (!d || !Array.isArray(d.recurring)) return toast('Données Budget24 introuvables');
+  const today = todayStr();
+  const done = new Set(S.items.map(i => i.b24).filter(Boolean));
+  const labels = new Set(S.items.map(i => i.label.trim().toLowerCase()));
+  const exp = d.recurring.filter(r => r.type === 'expense');
+  const others = exp.filter(r => (r.frequence || 'monthly') !== 'monthly');
+  const C = exp.filter(r => (r.frequence || 'monthly') === 'monthly' && !(r.dateFin && r.dateFin < today)).map(r => {
+    let pals = (r.paliers && r.paliers.length ? r.paliers : [{ montant: r.montant, dateDebut: r.dateDebut }])
+      .map(p => ({ from: p.dateDebut || r.dateDebut, amount: num(p.montant) })).filter(p => p.from && !isNaN(p.amount))
+      .sort((a, b) => a.from.localeCompare(b.from));
+    if (pals.length && r.dateDebut && pals[0].from < r.dateDebut) pals[0].from = r.dateDebut;
+    const ovs = (d.overrides || []).filter(o => o.recurringId === r.id);
+    return { r, pals, ovs, already: done.has(r.id) || labels.has(String(r.libelle).trim().toLowerCase()), now: amountAt({ paliers: pals }, today) };
+  }).filter(c => c.pals.length).sort((a, b) => (a.r.jour - b.r.jour) || a.r.libelle.localeCompare(b.r.libelle));
+  if (!C.length) return toast('Aucune charge mensuelle trouvée');
+  openSheet(`<h3>Import Budget24</h3><p class="mut">${C.length} charge(s) mensuelle(s). Choisis qui paye, décoche ce que tu ne veux pas.</p>
+    ${C.map((c, i) => `<div class="card" style="box-shadow:none;border:1px solid var(--line);margin:10px 0 0;padding:10px">
+      <label class="chk" style="margin:0"><input type="checkbox" id="b24c${i}" ${c.already ? '' : 'checked'}>
+      <span style="flex:1"><b>${esc(c.r.libelle)}</b><br><span class="mut">le ${c.r.jour} · ${c.now == null ? 'dès le ' + fmtS(c.pals[0].from) + ' : ' + eur(c.pals[0].amount) : eur(c.now)}${c.pals.length > 1 ? ' · ' + c.pals.length + ' paliers' : ''}${c.already ? ' · déjà dans Quote-Part' : ''}</span></span></label>
+      ${segH('b24o' + i, [['F', 'Famille'], ['G', NG()], ['M', NM()]], 'F')}</div>`).join('')}
+    ${others.length ? `<p class="hint">Non repris (pas mensuels) : ${others.map(r => esc(r.libelle)).join(', ')}. Ajoute-les à la main si besoin.</p>` : ''}
+    <button class="btn full" id="b24OK" style="margin-top:14px">Importer la sélection</button>`);
+  C.forEach((c, i) => segBind('b24o' + i));
+  $('#b24OK').onclick = () => {
+    let n = 0;
+    C.forEach((c, i) => {
+      if (!$('#b24c' + i).checked) return;
+      const it = { id: uid(), b24: c.r.id, kind: 'chg', owner: segVal('b24o' + i) || 'F', label: c.r.libelle, day: Math.min(31, Math.max(1, Number(c.r.jour) || 1)), account: 'G', paliers: c.pals, end: c.r.dateFin || '' };
+      S.items.push(it); n++;
+      for (const o of c.ovs) {
+        if (!o.defaultDate) continue;
+        const ov = {}; if (o.deleted) ov.skip = true; if (o.date && o.date !== o.defaultDate) ov.date = o.date; if (o.montant != null) ov.amount = num(o.montant);
+        if (Object.keys(ov).length) S.ov[it.id + '|' + cycleOf(o.defaultDate)] = ov;
+      }
+    });
+    save(); closeSheet(); tab = 'elems'; render(); toast(n + ' charge(s) importée(s)');
+  };
+}
+
 /* ====================== Événements ====================== */
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.tab; render(); window.scrollTo(0, 0); };
 document.body.addEventListener('click', e => {
@@ -477,6 +523,17 @@ document.body.addEventListener('click', e => {
         const b = DEF(); S = { ...b, ...d, settings: { ...b.settings, ...(d.settings || {}) } }; save(); cur = cycleOf(todayStr()); render(); toast('Sauvegarde importée');
       } catch (e) { toast('Fichier invalide'); } };
       r.readAsText(file); };
+    f.click();
+  }
+  else if (a === 'b24') {
+    let d = null; try { d = JSON.parse(localStorage.getItem('budget24-data') || 'null'); } catch (e) {}
+    if (!d) return toast('Budget24 introuvable sur ce navigateur : utilise l\'import de fichier');
+    b24Review(d);
+  }
+  else if (a === 'b24file') {
+    const f = $('#b24File'); f.value = '';
+    f.onchange = () => { const file = f.files[0]; if (!file) return; const r = new FileReader();
+      r.onload = () => { try { b24Review(JSON.parse(r.result)); } catch (e) { toast('Fichier invalide'); } }; r.readAsText(file); };
     f.click();
   }
   else if (a === 'reset') { if (confirm('Effacer toutes les données ? (Pense à exporter avant)')) { S = DEF(); save(); render(); } }
