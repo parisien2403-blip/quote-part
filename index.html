@@ -83,6 +83,23 @@ label.chk input{width:auto;margin:0;transform:scale(1.3)}
 .item{display:flex;gap:10px;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:11px 2px;font:inherit;color:inherit;text-align:left}
 .item:last-child{border-bottom:0}
 .item .l{flex:1;min-width:0}
+.wd{display:grid;grid-template-columns:repeat(7,1fr);background:#fff;border:1px solid var(--line);border-bottom:0;border-radius:var(--r) var(--r) 0 0}
+.wd div{text-align:center;font-size:11px;font-weight:700;color:var(--mut);padding:7px 0}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--line);border-top:1px solid var(--line);background:#fff;border-radius:0 0 var(--r) var(--r);overflow:hidden;margin-bottom:12px}
+.cc{position:relative;min-height:56px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 1px;font:inherit;color:inherit}
+.cc.e{background:var(--bg)}
+.cc.td{background:#e8effd}.cc.td .n{color:var(--g);font-weight:800}
+.cc .n{font-size:12px;color:var(--mut)}
+.cc .n small{font-size:9px;display:block;line-height:1}
+.cc .b{font-size:11px;font-weight:700;white-space:nowrap}
+.cc .ds{position:absolute;top:3px;right:3px;display:flex;gap:2px}
+.cc .ds i{width:5px;height:5px;border-radius:50%}
+.ds .in{background:var(--pos)}.ds .out{background:var(--neg)}.ds .vm{background:var(--m)}
+.band{display:flex;justify-content:space-between;gap:10px;color:#fff;background:linear-gradient(135deg,#14213d,#1d4ed8)}
+.band .k{font-size:12px;opacity:.8}.band .v{font-size:22px;font-weight:800}
+.yr{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:9px 2px;font:inherit;color:inherit;text-align:left}
+.yr:last-child{border-bottom:0}.yr.cur{background:#fdf2f8;border-radius:8px}
+.yr .l{flex:1}.yr .st{font-size:12px;color:var(--mut);margin-left:6px}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:30;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
 </style>
@@ -95,6 +112,7 @@ label.chk input{width:auto;margin:0;transform:scale(1.3)}
 <main id="view"></main>
 <nav class="tabs" id="tabs">
   <button data-tab="mois" class="on"><span>📅</span>Mois</button>
+  <button data-tab="cal"><span>🗓️</span>Calendrier</button>
   <button data-tab="elems"><span>🧾</span>Éléments</button>
   <button data-tab="regl"><span>⚙️</span>Réglages</button>
 </nav>
@@ -105,7 +123,7 @@ label.chk input{width:auto;margin:0;transform:scale(1.3)}
 'use strict';
 /* ====================== Données ====================== */
 const LS = 'quotepart.v1';
-const DEF = () => ({ v: 1, settings: { startDay: 25, nameG: 'Germain', nameM: 'Mélanie' }, items: [], ov: {}, oneoffs: [], transfers: [] });
+const DEF = () => ({ v: 1, settings: { startDay: 25, nameG: 'Germain', nameM: 'Mélanie', soldeRef: 0, dateRef: '', jourVir: 25 }, items: [], ov: {}, oneoffs: [], transfers: [] });
 let S = load();
 function load() {
   try {
@@ -193,12 +211,13 @@ let tab = 'mois';
 function render() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const nav = $('#cycNav');
-  if (tab === 'mois') {
+  _ev.clear();
+  if (tab === 'mois' || tab === 'cal') {
     const [a, b] = cycleRange(cur); const isNow = cur === cycleOf(todayStr());
     nav.innerHTML = `<button data-act="prev">‹</button><div class="lab">${fmtD(a)} → ${fmtD(b)}<small>${b.slice(0, 4)}</small></div>${isNow ? '' : '<button class="today" data-act="now">Auj.</button>'}<button data-act="next">›</button>`;
     nav.style.display = 'flex';
   } else nav.style.display = 'none';
-  $('#view').innerHTML = tab === 'mois' ? viewMois() : tab === 'elems' ? viewElems() : viewRegl();
+  $('#view').innerHTML = tab === 'mois' ? viewMois() : tab === 'cal' ? viewCal() : tab === 'elems' ? viewElems() : viewRegl();
 }
 
 function rowH(o) {
@@ -243,7 +262,80 @@ function viewMois() {
     + grp(`Charges perso ${esc(NG())}`, o => o.kind === 'chg' && o.owner === 'G') + grp(`Charges perso ${esc(NM())}`, o => o.kind === 'chg' && o.owner === 'M');
   const tr = `<div class="card"><h2>Virements faits à ${esc(NM())}<span>${eur(c.verse)}</span></h2>${c.T.length ? c.T.map(t =>
     `<button class="row" data-tr="${t.id}"><span class="d">${fmtS(t.date)}</span><span class="l">${esc(t.note || 'Virement')}</span><span class="a">${eur(t.amount)}</span></button>`).join('') : '<div class="empty">Aucun virement noté</div>'}</div>`;
-  return hero + prorata + tbl + lists + tr + `<button class="btn sec full" data-act="addOne">＋ Opération ponctuelle ce cycle</button>`;
+  const now = cycleOf(todayStr()); let yr = '';
+  for (let i = -2; i <= 9; i++) {
+    const k = shiftKey(now, i), c2 = compute(k), [y, m] = k.split('-').map(Number);
+    const st = Math.abs(c2.vir) < 0.01 ? '' : Math.abs(c2.reste) < 0.01 ? '✓ réglé' : c2.verse ? 'reste ' + eur(c2.reste) : '';
+    yr += `<button class="yr${k === cur ? ' cur' : ''}" data-goc="${k}"><span class="l">${MOIS[m - 1]} → ${MOIS[m % 12]} ${m === 12 ? y + 1 : y}<span class="st">${st}</span></span><b class="${c2.vir < 0 ? 'neg' : ''}" style="color:${c2.vir >= 0 ? 'var(--m)' : ''}">${eur(c2.vir)}</b></button>`;
+  }
+  const yrC = `<div class="card"><h2>À verser à ${esc(NM())} — mois par mois</h2>${yr}<p class="mut" style="margin:6px 0 0">Cycle du ${S.settings.startDay} au ${S.settings.startDay - 1 || 'fin'}. Touche un mois pour l'ouvrir.</p></div>`;
+  return hero + yrC + prorata + tbl + lists + tr + `<button class="btn sec full" data-act="addOne">＋ Opération ponctuelle ce cycle</button>`;
+}
+
+/* ====================== Calendrier & solde ====================== */
+const _ev = new Map();
+function addDays(s, n) { const [y, m, d] = s.split('-').map(Number); const t = new Date(y, m - 1, d + n); return ymd(t.getFullYear(), t.getMonth() + 1, t.getDate()); }
+function cycleEvents(k) {
+  if (_ev.has(k)) return _ev.get(k);
+  const c = compute(k), E = [];
+  for (const o of c.L) if (!o.skipped && o.account === 'G') E.push({ date: o.date, amt: o.kind === 'chg' ? -o.amount : o.amount, label: o.label, o, k });
+  for (const t of c.T) E.push({ date: t.date, amt: -t.amount, label: 'Virement à ' + NM() + (t.note ? ' — ' + t.note : ''), tr: t, k, vm: true });
+  if (Math.abs(c.reste) >= 0.01) E.push({ date: nominal(k, S.settings.jourVir || S.settings.startDay), amt: -c.reste, label: c.reste > 0 ? 'Virement prévu à ' + NM() : 'À recevoir de ' + NM(), planned: true, k, vm: true });
+  _ev.set(k, E); return E;
+}
+function balanceAt(D) {
+  const ref = S.settings.dateRef; if (!ref) return null;
+  const lo = D < ref ? D : ref, hi = D < ref ? ref : D;
+  let k = shiftKey(cycleOf(lo), -1), s = 0, g = 0; const kEnd = shiftKey(cycleOf(hi), 1);
+  while (k <= kEnd && g++ < 600) { for (const e of cycleEvents(k)) if (e.date > lo && e.date <= hi) s += e.amt; k = shiftKey(k, 1); }
+  return (S.settings.soldeRef || 0) + (D >= ref ? s : -s);
+}
+const tiny = n => (Math.abs(n) >= 10000 ? Math.round(n / 1000) + 'k' : Math.round(n).toLocaleString('fr-FR')) + '€';
+function dayEvents(d) { const k = cycleOf(d); return [shiftKey(k, -1), k, shiftKey(k, 1)].flatMap(cycleEvents).filter(e => e.date === d); }
+function viewCal() {
+  const [cs, ce] = cycleRange(cur), t = todayStr(), hasRef = !!S.settings.dateRef;
+  const E = [shiftKey(cur, -1), cur, shiftKey(cur, 1)].flatMap(cycleEvents).filter(e => e.date >= cs && e.date <= ce);
+  let bal = hasRef ? balanceAt(addDays(cs, -1)) : 0;
+  const [y0, m0, d0] = cs.split('-').map(Number);
+  let html = '';
+  if (!hasRef) html += `<div class="card"><h2>Solde du compte</h2><p style="margin:0 0 8px">Indique le solde de ton compte à une date pour voir son évolution jour par jour.</p><button class="btn full" data-act="goRegl">Régler le solde de départ</button></div>`;
+  const cells = []; let first = (new Date(y0, m0 - 1, d0).getDay() + 6) % 7;
+  for (let i = 0; i < first; i++) cells.push('<div class="cc e"></div>');
+  for (let d = cs, g = 0; d <= ce && g < 40; d = addDays(d, 1), g++) {
+    const ev = E.filter(e => e.date === d); bal += ev.reduce((a, e) => a + e.amt, 0);
+    const dots = (ev.some(e => !e.vm && e.amt > 0) ? '<i class="in"></i>' : '') + (ev.some(e => !e.vm && e.amt < 0) ? '<i class="out"></i>' : '') + (ev.some(e => e.vm) ? '<i class="vm"></i>' : '');
+    const dn = +d.slice(8);
+    cells.push(`<button class="cc${d === t ? ' td' : ''}" data-day="${d}"><span class="ds">${dots}</span><span class="n">${dn}${dn === 1 || d === cs ? `<small>${MOIS[+d.slice(5, 7) - 1]}</small>` : ''}</span>${hasRef ? `<span class="b ${bal < 0 ? 'neg' : 'pos'}">${tiny(bal)}</span>` : ''}</button>`);
+  }
+  if (hasRef) {
+    const tb = balanceAt(t);
+    html += `<div class="card band"><div><div class="k">Solde aujourd'hui</div><div class="v">${eur(tb)}</div></div><div style="text-align:right"><div class="k">Solde au ${fmtS(ce)}</div><div class="v" style="color:${bal < 0 ? '#fecaca' : '#fff'}">${eur(bal)}</div></div></div>`;
+  }
+  html += `<div class="wd">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => `<div>${x}</div>`).join('')}</div><div class="cal">${cells.join('')}</div>`;
+  const ins = E.filter(e => !e.vm && e.amt > 0).reduce((a, e) => a + e.amt, 0), outs = E.filter(e => !e.vm && e.amt < 0).reduce((a, e) => a - e.amt, 0), vm = E.filter(e => e.vm).reduce((a, e) => a - e.amt, 0);
+  html += `<div class="card"><h2>Sur ton compte ce cycle</h2><table>
+    <tr><td>Entrées</td><td class="pos">+${eur(ins)}</td></tr><tr><td>Prélèvements</td><td class="neg">${neg(outs)}</td></tr>
+    <tr><td>Virements à ${esc(NM())}</td><td style="color:var(--m)">${neg(vm)}</td></tr>
+    <tr class="tot"><td>Variation</td><td>${eur(ins - outs - vm)}</td></tr></table>
+    <p class="mut" style="margin:8px 0 0"><span class="dot" style="background:var(--pos)"></span>entrée <span class="dot" style="background:var(--neg);margin-left:8px"></span>prélèvement <span class="dot M" style="margin-left:8px"></span>virement ${esc(NM())}. Touche un jour pour le détail.</p></div>`;
+  return html;
+}
+function openDay(d) {
+  const E = dayEvents(d); const k = cycleOf(d);
+  const Mops = [shiftKey(k, -1), k, shiftKey(k, 1)].flatMap(x => compute(x).L.map(o => ({ o, k: x }))).filter(x => x.o.date === d && x.o.account === 'M' && !x.o.skipped);
+  const b = S.settings.dateRef ? balanceAt(d) : null;
+  const row = (e, i) => `<button class="row" data-de="${i}"><span class="l">${e.o ? `<span class="dot ${e.o.owner}"></span>` : '<span class="dot M"></span>'}${esc(e.label)}${e.planned ? ' <i class="tag mv">prévu</i>' : ''}</span><span class="a ${e.amt < 0 ? 'neg' : 'pos'}">${e.amt < 0 ? '−' : '+'}${eur(Math.abs(e.amt))}</span></button>`;
+  openSheet(`<h3>${fmtDY(d)}</h3>${b != null ? `<p class="mut">Solde en fin de journée : <b class="${b < 0 ? 'neg' : 'pos'}">${eur(b)}</b></p>` : ''}
+    ${E.length ? E.map(row).join('') : '<div class="empty">Aucune opération sur ton compte</div>'}
+    ${Mops.length ? `<p class="mut" style="margin:12px 0 0">Sur le compte de ${esc(NM())} :</p>` + Mops.map((x, i) => `<button class="row" data-dm="${i}"><span class="l"><span class="dot ${x.o.owner}"></span>${esc(x.o.label)}</span><span class="a ${x.o.kind === 'chg' ? 'neg' : 'pos'}">${x.o.kind === 'chg' ? '−' : '+'}${eur(x.o.amount)}</span></button>`).join('') : ''}
+    <div class="actions" style="margin-top:14px"><button class="btn sec" id="dOne">＋ Opération</button><button class="btn" id="dTr" style="background:var(--m)">＋ Virement ${esc(NM())}</button></div>`);
+  $('#pan').querySelectorAll('[data-de]').forEach(el => el.onclick = () => {
+    const e = E[+el.dataset.de]; cur = e.k;
+    if (e.o) openOcc(e.o.src, e.o.id, e.k); else if (e.tr) editTr(e.tr); else editTr(null, d, e.k);
+  });
+  $('#pan').querySelectorAll('[data-dm]').forEach(el => el.onclick = () => { const x = Mops[+el.dataset.dm]; cur = x.k; openOcc(x.o.src, x.o.id, x.k); });
+  $('#dOne').onclick = () => editOne(null, d);
+  $('#dTr').onclick = () => editTr(null, d, cycleOf(d));
 }
 
 const KLAB = { rev: 'Revenus', aide: 'Aides (partagées 50/50)', chg: 'Charges' };
@@ -269,9 +361,12 @@ function viewRegl() {
     <label>Ton prénom<input id="sG" value="${esc(NG())}"></label>
     <label>Prénom de ton épouse<input id="sM" value="${esc(NM())}"></label>
     <label>Le cycle commence le (jour du mois)<input id="sD" type="number" min="1" max="28" inputmode="numeric" value="${S.settings.startDay}"></label>
+    <label>Jour du virement à ${esc(NM())}<input id="sV" type="number" min="1" max="31" inputmode="numeric" value="${S.settings.jourVir || S.settings.startDay}"></label>
+    <label>Solde de ton compte…<input id="sS" inputmode="decimal" value="${S.settings.dateRef ? S.settings.soldeRef : ''}" placeholder="ex. 1250,40"></label>
+    <label>…à la date du<input id="sR" type="date" value="${S.settings.dateRef || todayStr()}"></label>
     <button class="btn full" data-act="saveSet">Enregistrer</button></div>
     <div class="card"><h2>Récupérer depuis Budget24</h2>
-    <p class="mut" style="margin-top:0">Reprend les charges récurrentes et les créanciers (Banque de France avec paliers). Tu choisis ensuite qui paye chaque ligne.</p>
+    <p class="mut" style="margin-top:0">Reprend les revenus, les charges récurrentes et les créanciers (Banque de France avec paliers). Tu choisis ensuite qui paye chaque ligne.</p>
     <button class="btn full" data-act="b24">Lire les données de Budget24</button>
     <button class="btn sec full" data-act="b24file">…ou importer une sauvegarde Budget24 (.json)</button>
     <input type="file" id="b24File" accept="application/json,.json" style="display:none"></div>
@@ -284,7 +379,7 @@ function viewRegl() {
     • Prorata de ${esc(NM())} = (son salaire + ½ aides) ÷ (tous les revenus + aides)<br>
     • Dû à ${esc(NM())} = son salaire + ½ aides − ses charges perso − prorata × charges familiales<br>
     • Une opération décalée reste comptée dans son cycle d'origine.</p></div>
-    <p class="mut" style="text-align:center">Quote-Part v1.2</p>`;
+    <p class="mut" style="text-align:center">Quote-Part v1.3</p>`;
 }
 
 /* ====================== Feuilles (formulaires) ====================== */
@@ -297,11 +392,11 @@ function segBind(id, cb) { const el = $('#' + id); if (!el) return; el.onclick =
 const segVal = id => $('#' + id + ' button.on')?.dataset.v;
 
 // --- Une opération d'un mois donné
-function openOcc(src, id) {
+function openOcc(src, id, k = cur) {
   if (src === 'one') return editOne(S.oneoffs.find(x => x.id === id));
   const it = S.items.find(x => x.id === id); if (!it) return;
-  const o = occs(cur).find(x => x.src === 'item' && x.id === id); if (!o) return;
-  const key = id + '|' + cur;
+  const o = occs(k).find(x => x.src === 'item' && x.id === id); if (!o) return;
+  const key = id + '|' + k;
   openSheet(`<h3>${esc(it.label)}</h3><p class="mut">Prévu ${fmtDY(o.nominal)} · ${eur(o.base)}</p>
     <label>Date réelle ce mois-ci<input type="date" id="oD" value="${o.date}"></label>
     <label>Montant ce mois-ci<input id="oA" inputmode="decimal" value="${o.amount}"></label>
@@ -372,10 +467,10 @@ function editItem(it) {
 }
 
 // --- Opération ponctuelle
-function editOne(x) {
+function editOne(x, pDate) {
   const isNew = !x;
   const [cs, ce] = cycleRange(cur); const t = todayStr();
-  x = x ? { ...x } : { id: uid(), kind: 'chg', owner: 'F', account: 'G', label: '', date: t >= cs && t <= ce ? t : cs, amount: '' };
+  x = x ? { ...x } : { id: uid(), kind: 'chg', owner: 'F', account: 'G', label: '', date: pDate || (t >= cs && t <= ce ? t : cs), amount: '' };
   openSheet(`<h3>${isNew ? 'Opération ponctuelle' : 'Modifier l\'opération'}</h3>
     <label>Type</label>${segH('xK', [['rev', 'Revenu'], ['aide', 'Aide 50/50'], ['chg', 'Charge']], x.kind)}
     <div id="xOw"></div>
@@ -405,9 +500,9 @@ function editOne(x) {
 }
 
 // --- Virement fait à l'épouse
-function editTr(t) {
-  const isNew = !t; const c = compute(cur);
-  t = t ? { ...t } : { id: uid(), cycle: cur, date: todayStr(), amount: c.reste > 0 ? c.reste : '', note: '' };
+function editTr(t, pDate, k = cur) {
+  const isNew = !t; const c = compute(k);
+  t = t ? { ...t } : { id: uid(), cycle: k, date: pDate || todayStr(), amount: c.reste > 0 ? c.reste : '', note: '' };
   openSheet(`<h3>${isNew ? 'Virement fait à ' + esc(NM()) : 'Modifier le virement'}</h3>
     <p class="mut">Compté pour le cycle affiché.</p>
     <label>Date<input type="date" id="tD" value="${t.date}"></label>
@@ -449,30 +544,40 @@ function b24Review(d) {
   const today = todayStr();
   const done = new Set(S.items.map(i => i.b24).filter(Boolean));
   const labels = new Set(S.items.map(i => i.label.trim().toLowerCase()));
-  const exp = d.recurring.filter(r => r.type === 'expense');
-  const others = exp.filter(r => (r.frequence || 'monthly') !== 'monthly');
-  const C = exp.filter(r => (r.frequence || 'monthly') === 'monthly' && !(r.dateFin && r.dateFin < today)).map(r => {
+  const rec = d.recurring.filter(r => r.type === 'expense' || r.type === 'income');
+  const others = rec.filter(r => (r.frequence || 'monthly') !== 'monthly');
+  const C = rec.filter(r => (r.frequence || 'monthly') === 'monthly' && !(r.dateFin && r.dateFin < today)).map(r => {
     let pals = (r.paliers && r.paliers.length ? r.paliers : [{ montant: r.montant, dateDebut: r.dateDebut }])
       .map(p => ({ from: p.dateDebut || r.dateDebut, amount: num(p.montant) })).filter(p => p.from && !isNaN(p.amount))
       .sort((a, b) => a.from.localeCompare(b.from));
     if (pals.length && r.dateDebut && pals[0].from < r.dateDebut) pals[0].from = r.dateDebut;
     const ovs = (d.overrides || []).filter(o => o.recurringId === r.id);
-    return { r, pals, ovs, already: done.has(r.id) || labels.has(String(r.libelle).trim().toLowerCase()), now: amountAt({ paliers: pals }, today) };
-  }).filter(c => c.pals.length).sort((a, b) => (a.r.jour - b.r.jour) || a.r.libelle.localeCompare(b.r.libelle));
-  if (!C.length) return toast('Aucune charge mensuelle trouvée');
-  openSheet(`<h3>Import Budget24</h3><p class="mut">${C.length} charge(s) mensuelle(s). Choisis qui paye, décoche ce que tu ne veux pas.</p>
-    ${C.map((c, i) => `<div class="card" style="box-shadow:none;border:1px solid var(--line);margin:10px 0 0;padding:10px">
+    const inc = r.type === 'income';
+    const def = inc ? (/caf|apl|aide|allocation|prime d.activit|paje|rsa/i.test(r.libelle) ? 'A' : 'G') : 'F';
+    return { r, inc, def, pals, ovs, already: done.has(r.id) || labels.has(String(r.libelle).trim().toLowerCase()), now: amountAt({ paliers: pals }, today) };
+  }).filter(c => c.pals.length).sort((a, b) => (b.inc - a.inc) || (a.r.jour - b.r.jour) || a.r.libelle.localeCompare(b.r.libelle));
+  if (!C.length) return toast('Aucun élément mensuel trouvé');
+  const st = d.settings || {}; const hasSolde = st.dateReference && st.soldeInitial != null && !isNaN(num(st.soldeInitial));
+  const card = (c, i) => `<div class="card" style="box-shadow:none;border:1px solid var(--line);margin:10px 0 0;padding:10px">
       <label class="chk" style="margin:0"><input type="checkbox" id="b24c${i}" ${c.already ? '' : 'checked'}>
       <span style="flex:1"><b>${esc(c.r.libelle)}</b><br><span class="mut">le ${c.r.jour} · ${c.now == null ? 'dès le ' + fmtS(c.pals[0].from) + ' : ' + eur(c.pals[0].amount) : eur(c.now)}${c.pals.length > 1 ? ' · ' + c.pals.length + ' paliers' : ''}${c.already ? ' · déjà dans Quote-Part' : ''}</span></span></label>
-      ${segH('b24o' + i, [['F', 'Famille'], ['G', NG()], ['M', NM()]], 'F')}</div>`).join('')}
+      ${segH('b24o' + i, c.inc ? [['G', NG()], ['M', NM()], ['A', 'Aide 50/50']] : [['F', 'Famille'], ['G', NG()], ['M', NM()]], c.def)}</div>`;
+  const nI = C.filter(c => c.inc).length;
+  openSheet(`<h3>Import Budget24</h3><p class="mut">Choisis à qui appartient chaque ligne, décoche ce que tu ne veux pas.</p>
+    ${hasSolde ? `<label class="chk"><input type="checkbox" id="b24s" ${S.settings.dateRef ? '' : 'checked'}> Reprendre le solde de départ : ${eur(num(st.soldeInitial))} au ${fmtS(st.dateReference)}/${st.dateReference.slice(2, 4)}</label>` : ''}
+    ${nI ? '<h2 class="mut" style="margin:14px 0 0;font-size:13px">REVENUS</h2>' : ''}${C.map((c, i) => c.inc ? card(c, i) : '').join('')}
+    ${C.length > nI ? '<h2 class="mut" style="margin:14px 0 0;font-size:13px">CHARGES</h2>' : ''}${C.map((c, i) => c.inc ? '' : card(c, i)).join('')}
     ${others.length ? `<p class="hint">Non repris (pas mensuels) : ${others.map(r => esc(r.libelle)).join(', ')}. Ajoute-les à la main si besoin.</p>` : ''}
     <button class="btn full" id="b24OK" style="margin-top:14px">Importer la sélection</button>`);
   C.forEach((c, i) => segBind('b24o' + i));
   $('#b24OK').onclick = () => {
     let n = 0;
+    if (hasSolde && $('#b24s') && $('#b24s').checked) { S.settings.soldeRef = num(st.soldeInitial); S.settings.dateRef = st.dateReference; }
     C.forEach((c, i) => {
       if (!$('#b24c' + i).checked) return;
-      const it = { id: uid(), b24: c.r.id, kind: 'chg', owner: segVal('b24o' + i) || 'F', label: c.r.libelle, day: Math.min(31, Math.max(1, Number(c.r.jour) || 1)), account: 'G', paliers: c.pals, end: c.r.dateFin || '' };
+      const v = segVal('b24o' + i) || c.def;
+      const kind = c.inc ? (v === 'A' ? 'aide' : 'rev') : 'chg';
+      const it = { id: uid(), b24: c.r.id, kind, owner: kind === 'aide' ? 'F' : v, label: c.r.libelle, day: Math.min(31, Math.max(1, Number(c.r.jour) || 1)), account: 'G', paliers: c.pals, end: c.r.dateFin || '' };
       S.items.push(it); n++;
       for (const o of c.ovs) {
         if (!o.defaultDate) continue;
@@ -480,7 +585,7 @@ function b24Review(d) {
         if (Object.keys(ov).length) S.ov[it.id + '|' + cycleOf(o.defaultDate)] = ov;
       }
     });
-    save(); closeSheet(); tab = 'elems'; render(); toast(n + ' charge(s) importée(s)');
+    save(); closeSheet(); tab = 'elems'; render(); toast(n + ' élément(s) importé(s)');
   };
 }
 
@@ -490,12 +595,15 @@ document.body.addEventListener('click', e => {
   if (e.target.closest('#pan')) return;
   const occ = e.target.closest('[data-occ]'); if (occ) { const [s, i] = occ.dataset.occ.split('|'); return openOcc(s, i); }
   const it = e.target.closest('[data-item]'); if (it) return editItem(S.items.find(x => x.id === it.dataset.item));
+  const dy = e.target.closest('[data-day]'); if (dy) return openDay(dy.dataset.day);
+  const gc = e.target.closest('[data-goc]'); if (gc) { cur = gc.dataset.goc; render(); window.scrollTo(0, 0); return; }
   const tr = e.target.closest('[data-tr]'); if (tr) return editTr(S.transfers.find(x => x.id === tr.dataset.tr));
   const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return;
   if (a === 'prev') { cur = shiftKey(cur, -1); render(); }
   else if (a === 'next') { cur = shiftKey(cur, 1); render(); }
   else if (a === 'now') { cur = cycleOf(todayStr()); render(); }
   else if (a === 'goElems') { tab = 'elems'; render(); }
+  else if (a === 'goRegl') { tab = 'regl'; render(); }
   else if (a === 'addItem') editItem(null);
   else if (a === 'addOne') editOne(null);
   else if (a === 'addTr') editTr(null);
@@ -503,6 +611,12 @@ document.body.addEventListener('click', e => {
   else if (a === 'saveSet') {
     const sd = parseInt($('#sD').value, 10);
     if (!(sd >= 1 && sd <= 28)) return toast('Jour de début entre 1 et 28');
+    const jv = parseInt($('#sV').value, 10); if (!(jv >= 1 && jv <= 31)) return toast('Jour du virement entre 1 et 31');
+    S.settings.jourVir = jv;
+    const so = num($('#sS').value);
+    if ($('#sS').value.trim() === '') { S.settings.dateRef = ''; S.settings.soldeRef = 0; }
+    else if (isNaN(so) || !$('#sR').value) return toast('Solde ou date invalide');
+    else { S.settings.soldeRef = so; S.settings.dateRef = $('#sR').value; }
     S.settings.nameG = $('#sG').value.trim() || 'Moi'; S.settings.nameM = $('#sM').value.trim() || 'Elle';
     if (sd !== S.settings.startDay) {
       // Ré-attribue les opérations ponctuelles au nouveau découpage
