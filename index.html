@@ -254,7 +254,7 @@ function viewElems() {
     return `<div class="card"><h2>${title}<span>${L.length}</span></h2>${L.length ? L.map(it => {
       const a = amountAt(it, today); const np = (it.paliers || []).length;
       const fin = it.end && it.end < today;
-      return `<button class="item" data-item="${it.id}"><span class="dot ${it.kind === 'aide' ? 'F' : it.owner}"></span><span class="l"><b>${esc(it.label)}</b><br><span class="mut">le ${it.day} · ${it.kind === 'aide' ? '50/50' : nameOf(it.owner)}${np > 1 ? ` · ${np} paliers` : ''}${it.account === 'M' ? ` · cpt ${esc(NM())}` : ''}${fin ? ' · terminé' : ''}</span></span><b class="${it.kind === 'chg' ? 'neg' : 'pos'}">${a == null ? 'à venir' : eur(a)}</b></button>`;
+      return `<button class="item" data-item="${it.id}"><span class="dot ${it.kind === 'aide' ? 'F' : it.owner}"></span><span class="l"><b>${esc(it.label)}</b><br><span class="mut">le ${it.day} · ${it.kind === 'aide' ? '50/50' : nameOf(it.owner)}${np > 1 ? ` · ${np} paliers` : ''}${it.account === 'M' ? ` · cpt ${esc(NM())}` : ''}${fin ? ' · terminé' : ''}</span></span><b style="text-align:right" class="${it.kind === 'chg' ? 'neg' : 'pos'}">${a == null ? (()=>{const p=[...it.paliers].sort((x,y)=>x.from.localeCompare(y.from))[0];return `<small class="mut">dès le ${fmtS(p.from)}/${p.from.slice(2,4)}</small><br>${eur(p.amount)}`;})() : eur(a)}</b></button>`;
     }).join('') : '<div class="empty">Aucun</div>'}</div>`;
   };
   return `<button class="btn full" style="margin:0 0 12px" data-act="addItem">＋ Ajouter un élément récurrent</button>`
@@ -279,7 +279,7 @@ function viewRegl() {
     • Prorata de ${esc(NM())} = (son salaire + ½ aides) ÷ (tous les revenus + aides)<br>
     • Dû à ${esc(NM())} = son salaire + ½ aides − ses charges perso − prorata × charges familiales<br>
     • Une opération décalée reste comptée dans son cycle d'origine.</p></div>
-    <p class="mut" style="text-align:center">Quote-Part v1</p>`;
+    <p class="mut" style="text-align:center">Quote-Part v1.1</p>`;
 }
 
 /* ====================== Feuilles (formulaires) ====================== */
